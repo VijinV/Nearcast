@@ -12,11 +12,11 @@ use std::sync::{Arc, Mutex, Once, OnceLock};
 use std::time::{Duration, Instant};
 
 use str0m::bwe::BweKind;
-use str0m::rtp::Extension;
 use str0m::change::{SdpAnswer, SdpOffer};
 use str0m::format::Codec;
 use str0m::media::{MediaTime, Mid, Pt};
 use str0m::net::{Protocol, Receive};
+use str0m::rtp::Extension;
 use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc, RtcConfig};
 use tokio::net::UdpSocket;
 use tokio::sync::broadcast::error::RecvError;
@@ -35,10 +35,16 @@ fn bwe_table() -> &'static Mutex<HashMap<u64, u32>> {
 
 fn update_min_bwe(shared: &Shared) {
     let t = bwe_table().lock().unwrap();
-    shared.min_peer_bwe.store(t.values().copied().min().unwrap_or(0), Ordering::Relaxed);
+    shared
+        .min_peer_bwe
+        .store(t.values().copied().min().unwrap_or(0), Ordering::Relaxed);
 }
 
-pub async fn accept_offer(shared: Arc<Shared>, offer: SdpOffer, local_ip: IpAddr) -> anyhow::Result<SdpAnswer> {
+pub async fn accept_offer(
+    shared: Arc<Shared>,
+    offer: SdpOffer,
+    local_ip: IpAddr,
+) -> anyhow::Result<SdpAnswer> {
     CRYPTO.call_once(|| str0m::crypto::from_feature_flags().install_process_default());
 
     // No BWE: on a LAN, str0m's pacer would spread every frame over ~50-200 ms
@@ -112,7 +118,11 @@ fn pick_h264_pt(rtc: &mut Rtc, mid: Mid) -> Option<Pt> {
 async fn peer_loop(mut rtc: Rtc, socket: UdpSocket, local: SocketAddr, shared: Arc<Shared>) {
     let id = NEXT_PEER.fetch_add(1, Ordering::Relaxed);
     let _viewer = ViewerGuard::new(shared.clone());
-    let mut peer = PeerGuard { id, shared: shared.clone(), connected: false };
+    let mut peer = PeerGuard {
+        id,
+        shared: shared.clone(),
+        connected: false,
+    };
     let mut video_rx = shared.video_tx.subscribe();
     let mut mid: Option<Mid> = None;
     let mut pt: Option<Pt> = None;
@@ -144,7 +154,10 @@ async fn peer_loop(mut rtc: Rtc, socket: UdpSocket, local: SocketAddr, shared: A
                         shared.video_slot.wake();
                     }
                     Event::EgressBitrateEstimate(BweKind::Twcc { estimate, .. }) => {
-                        bwe_table().lock().unwrap().insert(id, estimate.as_u64() as u32);
+                        bwe_table()
+                            .lock()
+                            .unwrap()
+                            .insert(id, estimate.as_u64() as u32);
                         update_min_bwe(&shared);
                     }
                     _ => {}

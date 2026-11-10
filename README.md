@@ -1,4 +1,10 @@
-# Local Stream
+# Nearcast
+
+**Cast your screen to devices near you.** Open a link (or scan a QR code) on any phone, tablet, TV or laptop on the same Wi-Fi to watch live, with nothing to install.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS-lightgrey) ![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-24C8DB)
+
+Free, open-source and private: your screen goes straight from your computer to devices on your own network. No accounts, no cloud, and nothing to install for viewers.
 
 A small Tauri + Rust desktop app (Windows and macOS) that shares your screen to any device on the same Wi-Fi. Click **Start sharing**, then open the link it shows (for example `http://192.168.1.23:8080`) in any browser on a phone, tablet, TV or laptop, or scan the QR code. Viewers don't need to install anything.
 
@@ -92,13 +98,13 @@ Tauri can't cross-compile, so build the macOS version on a Mac. You can also pus
 
 **Windows:** the first time you click **Start sharing**, Windows Firewall asks whether to allow network access. Tick **Private networks** and allow it, or other devices can't connect.
 
-**macOS:** the first capture triggers the **Screen Recording** permission. Enable *Local Stream* in **System Settings → Privacy & Security → Screen Recording**, then restart the app. macOS may also ask to allow incoming connections; click **Allow**.
+**macOS:** the first capture triggers the **Screen Recording** permission. Enable *Nearcast* in **System Settings → Privacy & Security → Screen Recording**, then restart the app. macOS may also ask to allow incoming connections; click **Allow**.
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---|---|
-| Viewer shows "Mode: Sharp text" even though you want video | WebRTC couldn't connect: usually the firewall blocks UDP. Allow *Local Stream* on **Private networks** in Windows Firewall, then tap **Mode** to switch back to video. |
+| Viewer shows "Mode: Sharp text" even though you want video | WebRTC couldn't connect: usually the firewall blocks UDP. Allow *Nearcast* on **Private networks** in Windows Firewall, then tap **Mode** to switch back to video. |
 | Phone can't open the link | Make sure both devices are on the same Wi-Fi (not a guest network, which often blocks devices from reaching each other). Check the firewall prompt above. Try another address under **Other network addresses**. |
 | Stream is laggy | Open **Stats** on the viewer. High latency with high bandwidth means the Wi-Fi is the bottleneck: lower the resolution to 1280 or the quality to 50–60. Use 5 GHz Wi-Fi if you can. |
 | Black screen on macOS | Grant Screen Recording permission and restart the app. |
@@ -117,3 +123,11 @@ cargo test --release -- --nocapture
 
 The test captures the real screen, starts the server, and receives and acknowledges tile updates over a raw WebSocket.
 To benchmark capture and encode speed: `cargo test --release stage_timings -- --ignored --nocapture`.
+
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks and project layout, and please follow the [Code of Conduct](CODE_OF_CONDUCT.md). Report security issues privately as described in [SECURITY.md](SECURITY.md).
+
+## License
+
+Nearcast is released under the [MIT License](LICENSE). Third-party components and a note on H.264 patents are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -10,7 +10,7 @@ const els = {
   previewToggle: $('previewToggle'), preview: $('preview'),
 };
 
-const STORE_KEY = 'local-stream-settings-v3';
+const STORE_KEY = 'nearcast-settings';
 const defaults = { monitorId: null, fps: 60, quality: 75, maxWidth: 1920, port: 8080, preview: false };
 
 function loadPrefs() {

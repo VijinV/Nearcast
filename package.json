@@ -1,7 +1,9 @@
 {
-  "name": "local-stream",
+  "name": "nearcast",
   "private": true,
   "version": "0.4.0",
+  "description": "Share your screen to any browser on the local network",
+  "license": "MIT",
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",

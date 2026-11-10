@@ -25,7 +25,12 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { monitor_id: None, fps: 60, quality: 75, max_width: 1920 }
+        Self {
+            monitor_id: None,
+            fps: 60,
+            quality: 75,
+            max_width: 1920,
+        }
     }
 }
 

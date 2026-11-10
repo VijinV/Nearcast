@@ -95,7 +95,11 @@ async fn offer(
         .get(header::HOST)
         .and_then(|h| h.to_str().ok())
         .and_then(|h| {
-            let host = h.rsplit_once(':').map(|(a, _)| a).unwrap_or(h).trim_matches(['[', ']']);
+            let host = h
+                .rsplit_once(':')
+                .map(|(a, _)| a)
+                .unwrap_or(h)
+                .trim_matches(['[', ']']);
             if host.eq_ignore_ascii_case("localhost") {
                 return Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
             }
@@ -118,7 +122,9 @@ struct ViewerStats {
 
 /// Video-mode viewers report their measured latency so the host app can show it.
 async fn stats(State(shared): State<Arc<Shared>>, Json(s): Json<ViewerStats>) -> StatusCode {
-    shared.latency_ms.store(s.latency_ms.min(60_000), Ordering::Relaxed);
+    shared
+        .latency_ms
+        .store(s.latency_ms.min(60_000), Ordering::Relaxed);
     StatusCode::NO_CONTENT
 }
 
@@ -174,7 +180,9 @@ async fn viewer_session(socket: WebSocket, shared: Arc<Shared>) {
                 }
             };
             if let Some((msg, captured_at)) = update {
-                shared.bytes_sent.fetch_add(msg.len() as u64, Ordering::Relaxed);
+                shared
+                    .bytes_sent
+                    .fetch_add(msg.len() as u64, Ordering::Relaxed);
                 in_flight.push_back((seq, captured_at));
                 if tx.send(Message::Binary(msg)).await.is_err() {
                     break;
@@ -226,9 +234,21 @@ pub fn lan_addresses() -> Vec<(String, Ipv4Addr)> {
 
     let virtual_hint = |n: &str| {
         let n = n.to_lowercase();
-        ["vethernet", "virtual", "vmware", "vbox", "docker", "wsl", "utun", "bridge", "tailscale", "zerotier", "hyper-v"]
-            .iter()
-            .any(|k| n.contains(k))
+        [
+            "vethernet",
+            "virtual",
+            "vmware",
+            "vbox",
+            "docker",
+            "wsl",
+            "utun",
+            "bridge",
+            "tailscale",
+            "zerotier",
+            "hyper-v",
+        ]
+        .iter()
+        .any(|k| n.contains(k))
     };
     out.sort_by_key(|(name, ip)| {
         (

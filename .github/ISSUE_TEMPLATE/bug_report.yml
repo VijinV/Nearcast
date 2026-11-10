@@ -1,0 +1,56 @@
+name: Bug report
+description: Something isn't working (lag, black screen, can't connect, crash…)
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start sharing on …
+        2. Open the link on …
+        3. …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Nearcast version
+      placeholder: "0.4.0"
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: Host computer (OS, CPU, GPU)
+      placeholder: "Windows 11, Ryzen 7 6800H, RTX 3050 Laptop"
+    validations:
+      required: true
+  - type: input
+    id: viewer
+    attributes:
+      label: Viewer device and browser
+      placeholder: "iPhone 15, Safari 18 / Android Chrome / …"
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Viewer mode
+      options: [Video, Sharp text, Not sure]
+  - type: textarea
+    id: stats
+    attributes:
+      label: Stats
+      description: The app window's latency / fps / bandwidth / encoder line, and the viewer's Stats overlay (press S or tap Stats).
+  - type: textarea
+    id: logs
+    attributes:
+      label: Errors or logs
+      description: Any error message shown in the app, or the browser console.
+      render: text

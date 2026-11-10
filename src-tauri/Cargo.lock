@@ -2825,31 +2825,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "local-stream"
-version = "0.4.0"
-dependencies = [
- "anyhow",
- "axum",
- "bytes",
- "futures-util",
- "jpeg-encoder",
- "local-ip-address",
- "objc2-core-graphics",
- "openh264",
- "openh264-sys2",
- "qrcode",
- "rayon",
- "serde",
- "serde_json",
- "str0m",
- "tauri",
- "tauri-build",
- "tokio",
- "windows",
- "xcap",
-]
-
-[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3027,6 +3002,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee6cda3051665f1fb8d9e08fc35c96d5a244fb1be711a03b71118828afc9a873"
 dependencies = [
  "jni-sys 0.3.1",
+]
+
+[[package]]
+name = "nearcast"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "bytes",
+ "futures-util",
+ "jpeg-encoder",
+ "local-ip-address",
+ "objc2-core-graphics",
+ "openh264",
+ "openh264-sys2",
+ "qrcode",
+ "rayon",
+ "serde",
+ "serde_json",
+ "str0m",
+ "tauri",
+ "tauri-build",
+ "tokio",
+ "windows",
+ "xcap",
 ]
 
 [[package]]

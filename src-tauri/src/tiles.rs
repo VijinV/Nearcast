@@ -237,7 +237,12 @@ pub fn encode_changes(
             }
             let mut jpeg = Vec::with_capacity(pixels.len() / 8);
             Encoder::new(&mut jpeg, quality).encode(&pixels, w as u16, h as u16, ColorType::Rgb)?;
-            Ok(EncodedRun { row, col0, cols: ncols, jpeg: Bytes::from(jpeg) })
+            Ok(EncodedRun {
+                row,
+                col0,
+                cols: ncols,
+                jpeg: Bytes::from(jpeg),
+            })
         })
         .collect::<anyhow::Result<_>>()?;
 

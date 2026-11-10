@@ -84,7 +84,10 @@ pub struct H264 {
 
 impl H264 {
     pub fn new(width: u32, height: u32, bitrate: u32, fps: u32) -> anyhow::Result<Self> {
-        let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).clamp(1, 4) as u16;
+        let threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+            .clamp(1, 4) as u16;
         let config = EncoderConfig::new()
             .bitrate(BitRate::from_bps(bitrate))
             .max_frame_rate(FrameRate::from_hz(fps as f32))
@@ -100,11 +103,13 @@ impl H264 {
             .intra_frame_period(IntraFramePeriod::from_num_frames(fps.max(1) * 4))
             .num_threads(threads);
         let enc = Encoder::with_api_config(OpenH264API::from_source(), config)?;
-        Ok(Self { enc, width, height, bitrate, yuv: Vec::new() })
-    }
-
-    pub fn dims(&self) -> (u32, u32) {
-        (self.width, self.height)
+        Ok(Self {
+            enc,
+            width,
+            height,
+            bitrate,
+            yuv: Vec::new(),
+        })
     }
 
     pub fn set_bitrate(&mut self, bps: u32) {
@@ -151,7 +156,10 @@ impl H264 {
         let (u, v) = uv.split_at((w / 2) * (h / 2));
         let src = YUVSlices::new((y, u, v), (w, h), (w, w / 2, w / 2));
         let bs = self.enc.encode(&src)?;
-        let keyframe = matches!(bs.frame_type(), openh264::encoder::FrameType::IDR | openh264::encoder::FrameType::I);
+        let keyframe = matches!(
+            bs.frame_type(),
+            openh264::encoder::FrameType::IDR | openh264::encoder::FrameType::I
+        );
         let data = bs.to_vec();
         if data.is_empty() {
             return Ok(None);
@@ -217,36 +225,37 @@ pub fn target_bitrate(width: u32, height: u32, fps: u32, quality: u8) -> u32 {
 /// Hardware encoder (GPU) when available, OpenH264 (CPU) otherwise.
 enum AnyEncoder {
     #[cfg(windows)]
-    Hw(crate::mf::MfEncoder),
-    Sw(H264),
+    Hw(Box<crate::mf::MfEncoder>),
+    Sw(Box<H264>),
 }
 
 impl AnyEncoder {
-    fn open(w: u32, h: u32, bitrate: u32, fps: u32, try_hw: bool) -> anyhow::Result<(Self, String)> {
+    fn open(
+        w: u32,
+        h: u32,
+        bitrate: u32,
+        fps: u32,
+        try_hw: bool,
+    ) -> anyhow::Result<(Self, String)> {
         #[cfg(windows)]
         if try_hw {
             match crate::mf::MfEncoder::new(w, h, fps, bitrate) {
                 Ok(e) => {
                     let name = format!("GPU: {}", e.name);
-                    return Ok((AnyEncoder::Hw(e), name));
+                    return Ok((AnyEncoder::Hw(Box::new(e)), name));
                 }
                 Err(e) => eprintln!("hardware encoder unavailable ({e}); using CPU encoder"),
             }
         }
         let _ = try_hw;
-        Ok((AnyEncoder::Sw(H264::new(w, h, bitrate, fps)?), "CPU: OpenH264".into()))
+        Ok((
+            AnyEncoder::Sw(Box::new(H264::new(w, h, bitrate, fps)?)),
+            "CPU: OpenH264".into(),
+        ))
     }
 
     fn is_hw(&self) -> bool {
         !matches!(self, AnyEncoder::Sw(_))
-    }
-
-    fn dims(&self) -> (u32, u32) {
-        match self {
-            #[cfg(windows)]
-            AnyEncoder::Hw(e) => e.dims(),
-            AnyEncoder::Sw(e) => e.dims(),
-        }
     }
 
     fn set_bitrate(&mut self, bps: u32) {
@@ -301,7 +310,10 @@ pub fn run(shared: Arc<Shared>) {
 
         let wants_key = shared.keyframe_requested.load(Ordering::Relaxed)
             && last_keyframe_req.elapsed() > Duration::from_millis(250);
-        let Some((frame, _fresh)) = shared.video_slot.take(Duration::from_millis(100), wants_key) else {
+        let Some((frame, _fresh)) = shared
+            .video_slot
+            .take(Duration::from_millis(100), wants_key)
+        else {
             continue;
         };
 
@@ -341,7 +353,9 @@ pub fn run(shared: Arc<Shared>) {
         }
         let e = enc.as_mut().unwrap();
         e.set_bitrate(bitrate);
-        shared.video_kbps_target.store(bitrate / 1000, Ordering::Relaxed);
+        shared
+            .video_kbps_target
+            .store(bitrate / 1000, Ordering::Relaxed);
         shared.video_width.store(vw, Ordering::Relaxed);
         shared.video_height.store(vh, Ordering::Relaxed);
 
@@ -364,8 +378,14 @@ pub fn run(shared: Arc<Shared>) {
             Ok(outputs) => {
                 if !outputs.is_empty() {
                     let ms = t.elapsed().as_secs_f64() * 1000.0;
-                    avg_ms = if avg_ms == 0.0 { ms } else { avg_ms * 0.9 + ms * 0.1 };
-                    shared.encode_ms_x10.store((avg_ms * 10.0) as u32, Ordering::Relaxed);
+                    avg_ms = if avg_ms == 0.0 {
+                        ms
+                    } else {
+                        avg_ms * 0.9 + ms * 0.1
+                    };
+                    shared
+                        .encode_ms_x10
+                        .store((avg_ms * 10.0) as u32, Ordering::Relaxed);
                 }
                 for (data, keyframe) in outputs {
                     let mut rtp = start.elapsed().as_micros() as u64 * 9 / 100;
@@ -373,7 +393,12 @@ pub fn run(shared: Arc<Shared>) {
                         rtp = last_rtp + 1;
                     }
                     last_rtp = rtp;
-                    let _ = shared.video_tx.send(EncodedFrame { data: data.into(), keyframe, captured_at: frame.captured_at, rtp_90k: rtp });
+                    let _ = shared.video_tx.send(EncodedFrame {
+                        data: data.into(),
+                        keyframe,
+                        captured_at: frame.captured_at,
+                        rtp_90k: rtp,
+                    });
                 }
             }
             Err(err) => {
@@ -439,18 +464,23 @@ fn scale_rgb(src: &[u8], sw: u32, sh: u32, dst: &mut Vec<u8>, dw: u32, dh: u32) 
             (a, b)
         })
         .collect();
-    dst.par_chunks_mut(dw as usize * 3).enumerate().for_each(|(y, row)| {
-        let ya = (((y as f32 + 0.25) * ry) as u32).min(sh - 1) as usize * src_stride;
-        let yb = (((y as f32 + 0.75) * ry) as u32).min(sh - 1) as usize * src_stride;
-        let ra = &src[ya..ya + src_stride];
-        let rb = &src[yb..yb + src_stride];
-        for (px, &(xa, xb)) in row.chunks_exact_mut(3).zip(xs.iter()) {
-            for c in 0..3 {
-                let sum = ra[xa + c] as u16 + ra[xb + c] as u16 + rb[xa + c] as u16 + rb[xb + c] as u16;
-                px[c] = ((sum + 2) >> 2) as u8;
+    dst.par_chunks_mut(dw as usize * 3)
+        .enumerate()
+        .for_each(|(y, row)| {
+            let ya = (((y as f32 + 0.25) * ry) as u32).min(sh - 1) as usize * src_stride;
+            let yb = (((y as f32 + 0.75) * ry) as u32).min(sh - 1) as usize * src_stride;
+            let ra = &src[ya..ya + src_stride];
+            let rb = &src[yb..yb + src_stride];
+            for (px, &(xa, xb)) in row.as_chunks_mut::<3>().0.iter_mut().zip(xs.iter()) {
+                for c in 0..3 {
+                    let sum = ra[xa + c] as u16
+                        + ra[xb + c] as u16
+                        + rb[xa + c] as u16
+                        + rb[xb + c] as u16;
+                    px[c] = ((sum + 2) >> 2) as u8;
+                }
             }
-        }
-    });
+        });
 }
 
 /// Arrow pointer bitmap: '#' = black outline, '.' = white fill.
@@ -518,7 +548,7 @@ mod bench {
             let n = 60;
             let mut seed = 1u32;
             for f in 0..n {
-                for (i, px) in rgb.chunks_exact_mut(3).enumerate() {
+                for (i, px) in rgb.as_chunks_mut::<3>().0.iter_mut().enumerate() {
                     seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
                     let x = (i as u32 % w + f * 8) as u8;
                     let y = (i as u32 / w + f * 4) as u8;

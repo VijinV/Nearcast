@@ -156,15 +156,28 @@ async fn start_sharing(state: State<'_, AppState>, port: u16) -> Result<Status, 
                 .into_iter()
                 .map(|(iface, ip)| {
                     let url = format!("http://{ip}:{port}");
-                    ShareUrl { qr_svg: qr_svg(&url), url, interface: iface }
+                    ShareUrl {
+                        qr_svg: qr_svg(&url),
+                        url,
+                        interface: iface,
+                    }
                 })
                 .collect();
             if urls.is_empty() {
                 let url = format!("http://localhost:{port}");
-                urls.push(ShareUrl { qr_svg: qr_svg(&url), url, interface: "This computer only (no network found)".into() });
+                urls.push(ShareUrl {
+                    qr_svg: qr_svg(&url),
+                    url,
+                    interface: "This computer only (no network found)".into(),
+                });
             }
 
-            *session = Some(Session { shared, server, port, urls });
+            *session = Some(Session {
+                shared,
+                server,
+                port,
+                urls,
+            });
         }
     }
     get_status(state).await
@@ -194,7 +207,7 @@ fn main() {
             stop_sharing
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Local Stream");
+        .expect("error while running Nearcast");
 }
 
 #[cfg(test)]
@@ -213,7 +226,9 @@ mod tests {
         std::thread::spawn(move || capture::run(cap));
         tokio::spawn(server::serve(listener, shared.clone()));
 
-        let mut s = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let mut s = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
         s.write_all(
             b"GET /ws HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n",
         )
@@ -237,11 +252,20 @@ mod tests {
             let mut h = [0u8; 2];
             s.read_exact(&mut h).await.unwrap();
             let mut len = (h[1] & 0x7f) as u64;
-            if len == 126 { let mut b = [0u8; 2]; s.read_exact(&mut b).await.unwrap(); len = u16::from_be_bytes(b) as u64; }
-            else if len == 127 { let mut b = [0u8; 8]; s.read_exact(&mut b).await.unwrap(); len = u64::from_be_bytes(b); }
+            if len == 126 {
+                let mut b = [0u8; 2];
+                s.read_exact(&mut b).await.unwrap();
+                len = u16::from_be_bytes(b) as u64;
+            } else if len == 127 {
+                let mut b = [0u8; 8];
+                s.read_exact(&mut b).await.unwrap();
+                len = u64::from_be_bytes(b);
+            }
             let mut payload = vec![0u8; len as usize];
             s.read_exact(&mut payload).await.unwrap();
-            if h[0] & 0x0f != 2 { continue; }
+            if h[0] & 0x0f != 2 {
+                continue;
+            }
             assert_eq!(payload[0], 1);
             let seq = u32::from_le_bytes(payload[1..5].try_into().unwrap());
             let patches = u16::from_le_bytes(payload[16..18].try_into().unwrap());
@@ -270,7 +294,11 @@ mod tests {
         assert_eq!(shared.viewers.load(Ordering::SeqCst), 1);
         drop(s);
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-        assert_eq!(shared.viewers.load(Ordering::SeqCst), 0, "viewer count should drop on disconnect");
+        assert_eq!(
+            shared.viewers.load(Ordering::SeqCst),
+            0,
+            "viewer count should drop on disconnect"
+        );
         shared.stop.store(true, Ordering::SeqCst);
     }
 }

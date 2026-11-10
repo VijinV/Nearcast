@@ -54,8 +54,14 @@ fn pack(hi: u32, lo: u32) -> u64 {
 fn enumerate() -> Vec<(String, IMFActivate)> {
     let mut out = Vec::new();
     unsafe {
-        let input = MFT_REGISTER_TYPE_INFO { guidMajorType: MFMediaType_Video, guidSubtype: MFVideoFormat_NV12 };
-        let output = MFT_REGISTER_TYPE_INFO { guidMajorType: MFMediaType_Video, guidSubtype: MFVideoFormat_H264 };
+        let input = MFT_REGISTER_TYPE_INFO {
+            guidMajorType: MFMediaType_Video,
+            guidSubtype: MFVideoFormat_NV12,
+        };
+        let output = MFT_REGISTER_TYPE_INFO {
+            guidMajorType: MFMediaType_Video,
+            guidSubtype: MFVideoFormat_H264,
+        };
         let mut list: *mut Option<IMFActivate> = std::ptr::null_mut();
         let mut count = 0u32;
         if MFTEnumEx(
@@ -76,7 +82,11 @@ fn enumerate() -> Vec<(String, IMFActivate)> {
                 let mut name = String::from("Hardware H.264 encoder");
                 let mut p = windows::core::PWSTR::null();
                 let mut len = 0u32;
-                if act.GetAllocatedString(&MFT_FRIENDLY_NAME_Attribute, &mut p, &mut len).is_ok() && !p.is_null() {
+                if act
+                    .GetAllocatedString(&MFT_FRIENDLY_NAME_Attribute, &mut p, &mut len)
+                    .is_ok()
+                    && !p.is_null()
+                {
                     name = p.to_string().unwrap_or(name);
                     CoTaskMemFree(Some(p.0 as *const _));
                 }
@@ -87,7 +97,15 @@ fn enumerate() -> Vec<(String, IMFActivate)> {
     }
     let rank = |n: &str| {
         let n = n.to_lowercase();
-        if n.contains("nvidia") { 0 } else if n.contains("intel") { 1 } else if n.contains("amd") { 2 } else { 3 }
+        if n.contains("nvidia") {
+            0
+        } else if n.contains("intel") {
+            1
+        } else if n.contains("amd") {
+            2
+        } else {
+            3
+        }
     };
     out.sort_by_key(|(n, _)| rank(n));
     out
@@ -125,7 +143,14 @@ impl MfEncoder {
         anyhow::bail!("hardware encoders failed: {}", errors.join("; "))
     }
 
-    fn open(name: &str, act: &IMFActivate, width: u32, height: u32, fps: u32, bitrate: u32) -> anyhow::Result<Self> {
+    fn open(
+        name: &str,
+        act: &IMFActivate,
+        width: u32,
+        height: u32,
+        fps: u32,
+        bitrate: u32,
+    ) -> anyhow::Result<Self> {
         unsafe {
             let transform: IMFTransform = act.ActivateObject()?;
             if let Ok(attrs) = transform.GetAttributes() {
@@ -137,7 +162,10 @@ impl MfEncoder {
             if let Some(c) = &codec {
                 // Low-latency mode: no frame reordering/lookahead, one-in-one-out.
                 let _ = c.SetValue(&CODECAPI_AVLowLatencyMode, &VARIANT::from(true));
-                let _ = c.SetValue(&CODECAPI_AVEncCommonRateControlMode, &VARIANT::from(eAVEncCommonRateControlMode_CBR.0 as u32));
+                let _ = c.SetValue(
+                    &CODECAPI_AVEncCommonRateControlMode,
+                    &VARIANT::from(eAVEncCommonRateControlMode_CBR.0 as u32),
+                );
                 let _ = c.SetValue(&CODECAPI_AVEncCommonMeanBitRate, &VARIANT::from(bitrate));
                 let _ = c.SetValue(&CODECAPI_AVEncMPVDefaultBPictureCount, &VARIANT::from(0u32));
                 // Long GOP; viewers that need a keyframe ask for one.
@@ -187,10 +215,6 @@ impl MfEncoder {
         }
     }
 
-    pub fn dims(&self) -> (u32, u32) {
-        (self.width, self.height)
-    }
-
     pub fn set_bitrate(&mut self, bps: u32) {
         // Ignore tiny changes; re-programming the rate controller isn't free.
         if (bps as i64 - self.bitrate as i64).unsigned_abs() < self.bitrate as u64 / 20 {
@@ -214,15 +238,19 @@ impl MfEncoder {
 
     /// Pumps one event. Returns false if none was available (non-blocking).
     fn pump(&mut self, blocking: bool, out: &mut Vec<(Vec<u8>, bool)>) -> anyhow::Result<bool> {
-        let flags = if blocking { MEDIA_EVENT_GENERATOR_GET_EVENT_FLAGS(0) } else { MF_EVENT_FLAG_NO_WAIT };
+        let flags = if blocking {
+            MEDIA_EVENT_GENERATOR_GET_EVENT_FLAGS(0)
+        } else {
+            MF_EVENT_FLAG_NO_WAIT
+        };
         let ev = match unsafe { self.events.GetEvent(flags) } {
             Ok(ev) => ev,
             Err(e) if e.code() == MF_E_NO_EVENTS_AVAILABLE => return Ok(false),
             Err(e) => return Err(e.into()),
         };
         match MF_EVENT_TYPE(unsafe { ev.GetType()? } as i32) {
-            METransformNeedInput => self.need_input += 1,
-            METransformHaveOutput => self.drain(out)?,
+            t if t == METransformNeedInput => self.need_input += 1,
+            t if t == METransformHaveOutput => self.drain(out)?,
             _ => {}
         }
         Ok(true)
@@ -266,7 +294,8 @@ impl MfEncoder {
             let data = std::slice::from_raw_parts(ptr, len as usize).to_vec();
             buf.Unlock()?;
             if !data.is_empty() {
-                let key = sample.GetUINT32(&MFSampleExtension_CleanPoint).unwrap_or(0) != 0 || has_idr(&data);
+                let key = sample.GetUINT32(&MFSampleExtension_CleanPoint).unwrap_or(0) != 0
+                    || has_idr(&data);
                 out.push((data, key));
             }
         }
@@ -329,8 +358,12 @@ impl MfEncoder {
 impl Drop for MfEncoder {
     fn drop(&mut self) {
         unsafe {
-            let _ = self.transform.ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM, 0);
-            let _ = self.transform.ProcessMessage(MFT_MESSAGE_NOTIFY_END_STREAMING, 0);
+            let _ = self
+                .transform
+                .ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM, 0);
+            let _ = self
+                .transform
+                .ProcessMessage(MFT_MESSAGE_NOTIFY_END_STREAMING, 0);
             if let Ok(s) = self.transform.cast::<IMFShutdown>() {
                 let _ = s.Shutdown();
             }
@@ -383,8 +416,10 @@ pub fn rgb_to_nv12(rgb: &[u8], w: usize, h: usize, out: &mut Vec<u8>) {
                     }
                 }
                 let (r, g, b) = (r / 4, g / 4, b / 4);
-                uvrow[cx * 2] = (((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128).clamp(0, 255) as u8;
-                uvrow[cx * 2 + 1] = (((112 * r - 94 * g - 18 * b + 128) >> 8) + 128).clamp(0, 255) as u8;
+                uvrow[cx * 2] =
+                    (((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128).clamp(0, 255) as u8;
+                uvrow[cx * 2 + 1] =
+                    (((112 * r - 94 * g - 18 * b + 128) >> 8) + 128).clamp(0, 255) as u8;
             }
         });
 }
@@ -417,7 +452,7 @@ mod bench {
         let n = 120u32;
         let mut seed = 1u32;
         for f in 0..n {
-            for (i, px) in rgb.chunks_exact_mut(3).enumerate() {
+            for (i, px) in rgb.as_chunks_mut::<3>().0.iter_mut().enumerate() {
                 seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
                 let x = (i as u32 % w + f * 8) as u8;
                 let y = (i as u32 / w + f * 4) as u8;

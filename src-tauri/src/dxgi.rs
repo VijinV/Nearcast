@@ -58,7 +58,13 @@ impl DxgiSource {
                     let device = device.ok_or_else(|| anyhow::anyhow!("no D3D device"))?;
                     let context = context.ok_or_else(|| anyhow::anyhow!("no D3D context"))?;
                     let dup = output.cast::<IDXGIOutput1>()?.DuplicateOutput(&device)?;
-                    return Ok(Self { device, context, dup, staging: None, cursor: None });
+                    return Ok(Self {
+                        device,
+                        context,
+                        dup,
+                        staging: None,
+                        cursor: None,
+                    });
                 }
             }
         }
@@ -67,11 +73,18 @@ impl DxgiSource {
 }
 
 impl FrameSource for DxgiSource {
-    fn grab(&mut self, timeout_ms: u32, on_frame: &mut dyn FnMut(RawFrame)) -> anyhow::Result<bool> {
+    fn grab(
+        &mut self,
+        timeout_ms: u32,
+        on_frame: &mut dyn FnMut(RawFrame),
+    ) -> anyhow::Result<bool> {
         unsafe {
             let mut info = DXGI_OUTDUPL_FRAME_INFO::default();
             let mut resource: Option<IDXGIResource> = None;
-            if let Err(e) = self.dup.AcquireNextFrame(timeout_ms, &mut info, &mut resource) {
+            if let Err(e) = self
+                .dup
+                .AcquireNextFrame(timeout_ms, &mut info, &mut resource)
+            {
                 if e.code() == DXGI_ERROR_WAIT_TIMEOUT {
                     return Ok(false);
                 }
@@ -82,11 +95,10 @@ impl FrameSource for DxgiSource {
             }
 
             if info.LastMouseUpdateTime != 0 {
-                self.cursor = info
-                    .PointerPosition
-                    .Visible
-                    .as_bool()
-                    .then_some((info.PointerPosition.Position.x, info.PointerPosition.Position.y));
+                self.cursor = info.PointerPosition.Visible.as_bool().then_some((
+                    info.PointerPosition.Position.x,
+                    info.PointerPosition.Position.y,
+                ));
             }
 
             let mut got = false;
@@ -112,12 +124,17 @@ impl FrameSource for DxgiSource {
 }
 
 impl DxgiSource {
-    unsafe fn copy_out(&mut self, resource: &IDXGIResource, on_frame: &mut dyn FnMut(RawFrame)) -> anyhow::Result<()> {
+    unsafe fn copy_out(
+        &mut self,
+        resource: &IDXGIResource,
+        on_frame: &mut dyn FnMut(RawFrame),
+    ) -> anyhow::Result<()> {
         let texture: ID3D11Texture2D = resource.cast()?;
         let mut desc = D3D11_TEXTURE2D_DESC::default();
         texture.GetDesc(&mut desc);
 
-        let needs_new = !matches!(&self.staging, Some((_, w, h)) if *w == desc.Width && *h == desc.Height);
+        let needs_new =
+            !matches!(&self.staging, Some((_, w, h)) if *w == desc.Width && *h == desc.Height);
         if needs_new {
             let mut sd = desc;
             sd.BindFlags = 0;
@@ -139,10 +156,17 @@ impl DxgiSource {
         self.context.CopyResource(&dst, &src);
 
         let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-        self.context.Map(&dst, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
+        self.context
+            .Map(&dst, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
         let stride = mapped.RowPitch as usize;
         let data = std::slice::from_raw_parts(mapped.pData as *const u8, stride * *h as usize);
-        on_frame(RawFrame { data, width: *w, height: *h, stride, bgra: true });
+        on_frame(RawFrame {
+            data,
+            width: *w,
+            height: *h,
+            stride,
+            bgra: true,
+        });
         self.context.Unmap(&dst, 0);
         Ok(())
     }

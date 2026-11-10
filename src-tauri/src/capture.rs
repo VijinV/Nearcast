@@ -74,7 +74,8 @@ pub struct RawFrame<'a> {
 pub trait FrameSource {
     /// Waits up to `timeout_ms` for a new frame and calls `on_frame` with it.
     /// Returns Ok(false) if the screen did not change.
-    fn grab(&mut self, timeout_ms: u32, on_frame: &mut dyn FnMut(RawFrame)) -> anyhow::Result<bool>;
+    fn grab(&mut self, timeout_ms: u32, on_frame: &mut dyn FnMut(RawFrame))
+        -> anyhow::Result<bool>;
     /// Cursor position in source pixels, `None` if hidden/unknown.
     fn cursor(&mut self) -> Option<(i32, i32)>;
 }
@@ -92,16 +93,31 @@ impl XcapSource {
     fn new(monitor: Monitor) -> Self {
         let origin = (monitor.x().unwrap_or(0), monitor.y().unwrap_or(0));
         let logical_width = monitor.width().unwrap_or(1).max(1);
-        Self { monitor, origin, logical_width, pixel_width: logical_width }
+        Self {
+            monitor,
+            origin,
+            logical_width,
+            pixel_width: logical_width,
+        }
     }
 }
 
 impl FrameSource for XcapSource {
-    fn grab(&mut self, _timeout_ms: u32, on_frame: &mut dyn FnMut(RawFrame)) -> anyhow::Result<bool> {
+    fn grab(
+        &mut self,
+        _timeout_ms: u32,
+        on_frame: &mut dyn FnMut(RawFrame),
+    ) -> anyhow::Result<bool> {
         let img = self.monitor.capture_image()?;
         let (w, h) = img.dimensions();
         self.pixel_width = w;
-        on_frame(RawFrame { data: img.as_raw(), width: w, height: h, stride: w as usize * 4, bgra: false });
+        on_frame(RawFrame {
+            data: img.as_raw(),
+            width: w,
+            height: h,
+            stride: w as usize * 4,
+            bgra: false,
+        });
         Ok(true)
     }
 
@@ -151,7 +167,10 @@ fn open_source(monitor: Monitor) -> (Box<dyn FrameSource>, &'static str) {
 
 fn output_size(w: u32, h: u32, max_width: u32) -> (u32, u32) {
     if max_width > 0 && w > max_width {
-        (max_width, ((h as u64 * max_width as u64) / w as u64).max(1) as u32)
+        (
+            max_width,
+            ((h as u64 * max_width as u64) / w as u64).max(1) as u32,
+        )
     } else {
         (w, h)
     }
@@ -192,11 +211,24 @@ pub fn run(shared: Arc<Shared>) {
         let rp = shared.rtc_peers.load(Ordering::Relaxed);
         if have_prev_frame(&prev, out_dims) {
             if rp > 0 && last_rtc_peers == 0 {
-                shared.video_slot.put(RawRgb { rgb: Arc::new(prev.clone()), width: out_dims.0, height: out_dims.1, captured_at: Instant::now() });
+                shared.video_slot.put(RawRgb {
+                    rgb: Arc::new(prev.clone()),
+                    width: out_dims.0,
+                    height: out_dims.1,
+                    captured_at: Instant::now(),
+                });
             }
             if tv > 0 && last_tile_viewers == 0 {
                 let q = shared.settings.lock().unwrap().quality.clamp(10, 100);
-                let _ = tiles::encode_changes(&shared.store, &prev, None, out_dims.0, out_dims.1, q, Instant::now());
+                let _ = tiles::encode_changes(
+                    &shared.store,
+                    &prev,
+                    None,
+                    out_dims.0,
+                    out_dims.1,
+                    q,
+                    Instant::now(),
+                );
                 shared.publish();
             }
         } else if tv > 0 && last_tile_viewers == 0 {
@@ -242,13 +274,30 @@ pub fn run(shared: Arc<Shared>) {
 
             // WebRTC/H.264 path: hand the newest frame to the encoder thread.
             if shared.rtc_peers.load(Ordering::Relaxed) > 0 {
-                shared.video_slot.put(RawRgb { rgb: Arc::new(cur.clone()), width: ow, height: oh, captured_at });
+                shared.video_slot.put(RawRgb {
+                    rgb: Arc::new(cur.clone()),
+                    width: ow,
+                    height: oh,
+                    captured_at,
+                });
             }
 
             // JPEG-tile path: only when someone watches that way.
             if shared.tile_viewers.load(Ordering::Relaxed) > 0 {
-                let prev_ref = if have_prev { Some(prev.as_slice()) } else { None };
-                match tiles::encode_changes(&shared.store, &cur, prev_ref, ow, oh, settings.quality.clamp(10, 100), captured_at) {
+                let prev_ref = if have_prev {
+                    Some(prev.as_slice())
+                } else {
+                    None
+                };
+                match tiles::encode_changes(
+                    &shared.store,
+                    &cur,
+                    prev_ref,
+                    ow,
+                    oh,
+                    settings.quality.clamp(10, 100),
+                    captured_at,
+                ) {
                     Ok(true) => frames += 1,
                     Ok(false) => {}
                     Err(e) => encode_err = Some(e),
@@ -277,7 +326,11 @@ pub fn run(shared: Arc<Shared>) {
                 let cx = (x as i64 * out_dims.0 as i64 / src_dims.0.max(1) as i64) as i32;
                 let cy = (y as i64 * out_dims.1 as i64 / src_dims.1.max(1) as i64) as i32;
                 let inside = cx >= 0 && cy >= 0 && cx < out_dims.0 as i32 && cy < out_dims.1 as i32;
-                Cursor { x: cx, y: cy, visible: inside }
+                Cursor {
+                    x: cx,
+                    y: cy,
+                    visible: inside,
+                }
             }
             _ => Cursor::default(),
         };
@@ -288,17 +341,32 @@ pub fn run(shared: Arc<Shared>) {
             before != cursor
         };
         // The pointer is drawn into the video, so a pure mouse move needs a re-encode.
-        if cursor_moved && !got_frame && shared.rtc_peers.load(Ordering::Relaxed) > 0 && have_prev_frame(&prev, out_dims) {
-            shared.video_slot.put(RawRgb { rgb: Arc::new(prev.clone()), width: out_dims.0, height: out_dims.1, captured_at: Instant::now() });
+        if cursor_moved
+            && !got_frame
+            && shared.rtc_peers.load(Ordering::Relaxed) > 0
+            && have_prev_frame(&prev, out_dims)
+        {
+            shared.video_slot.put(RawRgb {
+                rgb: Arc::new(prev.clone()),
+                width: out_dims.0,
+                height: out_dims.1,
+                captured_at: Instant::now(),
+            });
         }
         shared.publish();
 
         let win = stats_start.elapsed();
         if win >= Duration::from_secs(1) {
             let secs = win.as_secs_f64();
-            shared.fps_x10.store((frames as f64 / secs * 10.0).round() as u32, Ordering::Relaxed);
+            shared.fps_x10.store(
+                (frames as f64 / secs * 10.0).round() as u32,
+                Ordering::Relaxed,
+            );
             let total = shared.bytes_sent.load(Ordering::Relaxed);
-            shared.kbps.store(((total - stats_bytes) as f64 * 8.0 / 1000.0 / secs) as u32, Ordering::Relaxed);
+            shared.kbps.store(
+                ((total - stats_bytes) as f64 * 8.0 / 1000.0 / secs) as u32,
+                Ordering::Relaxed,
+            );
             stats_bytes = total;
             frames = 0;
             stats_start = Instant::now();
@@ -332,14 +400,21 @@ fn scale_to_rgb(f: &RawFrame, dst: &mut [u8], dw: u32, dh: u32) {
     let row_len = dw as usize * 3;
 
     if dw == f.width && dh == f.height {
-        dst.par_chunks_mut(row_len).enumerate().for_each(|(y, row)| {
-            let src = &f.data[y * f.stride..y * f.stride + dw as usize * 4];
-            for (d, s) in row.chunks_exact_mut(3).zip(src.chunks_exact(4)) {
-                d[0] = s[ri];
-                d[1] = s[1];
-                d[2] = s[bi];
-            }
-        });
+        dst.par_chunks_mut(row_len)
+            .enumerate()
+            .for_each(|(y, row)| {
+                let src = &f.data[y * f.stride..y * f.stride + dw as usize * 4];
+                for (d, s) in row
+                    .as_chunks_mut::<3>()
+                    .0
+                    .iter_mut()
+                    .zip(src.as_chunks::<4>().0)
+                {
+                    d[0] = s[ri];
+                    d[1] = s[1];
+                    d[2] = s[bi];
+                }
+            });
         return;
     }
 
@@ -354,18 +429,23 @@ fn scale_to_rgb(f: &RawFrame, dst: &mut [u8], dw: u32, dh: u32) {
         })
         .collect();
 
-    dst.par_chunks_mut(row_len).enumerate().for_each(|(y, row)| {
-        let ya = (((y as f32 + 0.25) * ry) as u32).min(sh - 1) as usize * f.stride;
-        let yb = (((y as f32 + 0.75) * ry) as u32).min(sh - 1) as usize * f.stride;
-        let ra = &f.data[ya..ya + sw as usize * 4];
-        let rb = &f.data[yb..yb + sw as usize * 4];
-        for (px, &(xa, xb)) in row.chunks_exact_mut(3).zip(xs.iter()) {
-            for (c, si) in [ri, 1, bi].into_iter().enumerate() {
-                let sum = ra[xa + si] as u16 + ra[xb + si] as u16 + rb[xa + si] as u16 + rb[xb + si] as u16;
-                px[c] = ((sum + 2) >> 2) as u8;
+    dst.par_chunks_mut(row_len)
+        .enumerate()
+        .for_each(|(y, row)| {
+            let ya = (((y as f32 + 0.25) * ry) as u32).min(sh - 1) as usize * f.stride;
+            let yb = (((y as f32 + 0.75) * ry) as u32).min(sh - 1) as usize * f.stride;
+            let ra = &f.data[ya..ya + sw as usize * 4];
+            let rb = &f.data[yb..yb + sw as usize * 4];
+            for (px, &(xa, xb)) in row.as_chunks_mut::<3>().0.iter_mut().zip(xs.iter()) {
+                for (c, si) in [ri, 1, bi].into_iter().enumerate() {
+                    let sum = ra[xa + si] as u16
+                        + ra[xb + si] as u16
+                        + rb[xa + si] as u16
+                        + rb[xb + si] as u16;
+                    px[c] = ((sum + 2) >> 2) as u8;
+                }
             }
-        }
-    });
+        });
 }
 
 #[cfg(test)]
