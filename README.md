@@ -94,6 +94,20 @@ Output goes in `src-tauri/target/release/bundle/`:
 
 Tauri can't cross-compile, so build the macOS version on a Mac. You can also push to GitHub and use the included workflow (`.github/workflows/build.yml`), which builds both platforms on every `v*` tag or when run manually.
 
+## Release a macOS build
+
+Run the release build and test before publishing a tag:
+
+```bash
+npm run build
+cd src-tauri
+cargo test --release -- --nocapture
+```
+
+The macOS installer is written to
+`src-tauri/target/release/bundle/dmg/Nearcast_<version>_aarch64.dmg` on Apple
+Silicon. Attach that DMG to the matching GitHub release tag.
+
 ## First-run notes
 
 **Windows:** the first time you click **Start sharing**, Windows Firewall asks whether to allow network access. Tick **Private networks** and allow it, or other devices can't connect.
