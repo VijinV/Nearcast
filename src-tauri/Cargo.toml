@@ -1,0 +1,47 @@
+[package]
+name = "local-stream"
+version = "0.4.0"
+edition = "2021"
+description = "Share your screen to any browser on the local network"
+authors = ["vijin"]
+
+[dependencies]
+anyhow = "1.0.104"
+axum = { version = "0.8.9", features = ["ws"] }
+bytes = "1.12.1"
+futures-util = { version = "0.3.34", default-features = false, features = ["sink", "std"] }
+jpeg-encoder = { version = "0.7.1", features = ["simd"] }
+local-ip-address = "0.6.13"
+openh264 = "0.9.9"
+openh264-sys2 = "0.9.9"
+qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
+rayon = "1.12.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+str0m = { version = "0.25", default-features = false, features = ["rust-crypto"] }
+tauri = { version = "2", features = [] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "sync", "net", "time"] }
+xcap = "0.9.10"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+# JPEG encoding + scaling are hot loops: keep them fast even in `tauri dev`.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[target."cfg(windows)".dependencies]
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Dxgi", "Win32_Graphics_Dxgi_Common", "Win32_Graphics_Direct3D", "Win32_Graphics_Direct3D11", "Win32_UI_WindowsAndMessaging", "Win32_Media_MediaFoundation", "Win32_System_Com", "Win32_System_Variant"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGEvent", "CGEventTypes"] }

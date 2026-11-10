@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
+<title>Local Stream</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #eee; }
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  #screen, #video { max-width: 100%; max-height: 100%; display: block; }
+  #video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+  #stage.actual { display: block; overflow: auto; }
+  #stage.actual #screen { max-width: none; max-height: none; }
+  #stage.actual #video { width: auto; height: auto; max-width: none; max-height: none; }
+  .hide { display: none !important; }
+  #cursor { position: fixed; left: 0; top: 0; width: 20px; height: 20px; pointer-events: none; display: none; will-change: transform; z-index: 2; }
+  #overlay { position: fixed; inset: 0; display: flex; flex-direction: column; gap: 14px; align-items: center; justify-content: center; text-align: center; padding: 24px; pointer-events: none; z-index: 3; }
+  #overlay.hidden { display: none; }
+  .spinner { width: 34px; height: 34px; border: 3px solid #333; border-top-color: #4f8cff; border-radius: 50%; animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #msg { font-size: 15px; color: #aaa; }
+  #bar { position: fixed; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; transition: opacity .3s; z-index: 4; }
+  #bar.idle { opacity: 0; pointer-events: none; }
+  #bar button { background: rgba(30,30,30,.85); color: #fff; border: 1px solid #444; border-radius: 10px; padding: 9px 13px; font-size: 14px; cursor: pointer; backdrop-filter: blur(6px); }
+  #bar button:hover { background: rgba(60,60,60,.9); }
+  #live { position: fixed; left: 12px; top: calc(12px + env(safe-area-inset-top)); display: flex; gap: 8px; align-items: center; font-size: 12px; transition: opacity .3s; z-index: 4; }
+  #live .dot { font-weight: 600; letter-spacing: .05em; background: rgba(220,38,38,.9); padding: 4px 8px; border-radius: 6px; }
+  #live .stats { background: rgba(0,0,0,.6); padding: 4px 8px; border-radius: 6px; font-variant-numeric: tabular-nums; display: none; }
+  #live.show-stats .stats { display: block; }
+  #live.idle, #live.off { opacity: 0; }
+  #tap { position: fixed; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.5); font-size: 18px; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <video id="video" class="hide" autoplay playsinline muted disablepictureinpicture></video>
+  <canvas id="screen" class="hide" width="16" height="9"></canvas>
+</div>
+<svg id="cursor" viewBox="0 0 20 20" aria-hidden="true"><path d="M2 1 L2 16 L6 12.5 L8.8 18.5 L11.4 17.3 L8.7 11.4 L14 11.4 Z" fill="#fff" stroke="#000" stroke-width="1.3" stroke-linejoin="round"/></svg>
+<div id="overlay"><div class="spinner"></div><div id="msg">Connecting to screen…</div></div>
+<div id="tap" class="hide">Tap to start video</div>
+<div id="live" class="off"><span class="dot">● LIVE</span><span class="stats" id="stats"></span></div>
+<div id="bar">
+  <button id="modeBtn" title="Switch between smooth video and sharp text">Mode: Video</button>
+  <button id="statsBtn" title="Show latency stats">Stats</button>
+  <button id="fitBtn" title="Toggle fit / actual size">Actual size</button>
+  <button id="fsBtn" title="Fullscreen">Fullscreen</button>
+</div>
+<script>
+(() => {
+  // Two ways to watch:
+  //  * "video": WebRTC + H.264 — smooth motion (YouTube, games), low bandwidth,
+  //    every viewer gets the same frames at the same moment.
+  //  * "sharp": JPEG tiles over WebSocket — pixel-crisp text, works everywhere.
+  // Video is the default; if WebRTC can't connect we fall back to sharp.
+  const $ = (id) => document.getElementById(id);
+  const video = $('video'), canvas = $('screen'), stage = $('stage');
+  const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+  const overlay = $('overlay'), msg = $('msg'), live = $('live'), statsEl = $('stats');
+  const bar = $('bar'), cursorEl = $('cursor'), tap = $('tap'), modeBtn = $('modeBtn');
+  const params = new URLSearchParams(location.search);
+  const embed = params.has('embed');
+  if (embed) bar.style.display = 'none';
+
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  };
+  const rtcSupported = typeof RTCPeerConnection === 'function';
+  let mode = params.get('mode') || (embed ? 'sharp' : store.get('ls-mode') || 'video');
+  if (!rtcSupported) mode = 'sharp';
+
+  let session = 0;          // bumps on every (re)connect so stale callbacks are ignored
+  let stopCurrent = () => {};
+  let retry = null;
+  let stats = { latency: 0, fps: 0, kbps: 0 };
+  let hostEncodeMs = 0;
+
+  function showStatus(text) {
+    msg.textContent = text;
+    overlay.classList.remove('hidden');
+    live.classList.add('off');
+    cursorEl.style.display = 'none';
+  }
+  function showLive() {
+    overlay.classList.add('hidden');
+    live.classList.remove('off');
+  }
+  function setModeLabel() {
+    modeBtn.textContent = mode === 'video' ? 'Mode: Video' : 'Mode: Sharp text';
+    modeBtn.style.display = rtcSupported ? '' : 'none';
+  }
+
+  function start() {
+    clearTimeout(retry);
+    stopCurrent();
+    const id = ++session;
+    setModeLabel();
+    stopCurrent = mode === 'video' ? startVideo(id) : startSharp(id);
+  }
+  function scheduleRetry(id, text) {
+    if (id !== session) return;
+    showStatus(text);
+    clearTimeout(retry);
+    retry = setTimeout(start, 1500);
+  }
+
+  // ---------------------------------------------------------------- video (WebRTC)
+  function startVideo(id) {
+    video.classList.remove('hide');
+    canvas.classList.add('hide');
+    cursorEl.style.display = 'none';      // the pointer is drawn into the video itself
+    const pc = new RTCPeerConnection({ iceServers: [] });
+    const tr = pc.addTransceiver('video', { direction: 'recvonly' });
+    try {
+      // Prefer H.264 (hardware-decoded on phones).
+      const caps = RTCRtpReceiver.getCapabilities && RTCRtpReceiver.getCapabilities('video');
+      if (caps && tr.setCodecPreferences) {
+        const h264 = caps.codecs.filter((c) => /h264/i.test(c.mimeType));
+        const rest = caps.codecs.filter((c) => !/h264/i.test(c.mimeType));
+        if (h264.length) tr.setCodecPreferences([...h264, ...rest]);
+      }
+    } catch {}
+    // Render frames as soon as they arrive (no smoothing buffer).
+    try { tr.receiver.jitterBufferTarget = 0; } catch {}
+    try { tr.receiver.playoutDelayHint = 0; } catch {}
+
+    let gotFrame = false;
+    pc.ontrack = (e) => {
+      video.srcObject = e.streams[0] || new MediaStream([e.track]);
+      const p = video.play();
+      if (p && p.catch) p.catch(() => { tap.classList.remove('hide'); });
+    };
+    const markLive = () => {
+      if (id !== session || gotFrame) return;
+      gotFrame = true;
+      showLive();
+    };
+    video.addEventListener('loadeddata', markLive, { once: true });
+    video.addEventListener('playing', markLive, { once: true });
+
+    pc.onconnectionstatechange = () => {
+      if (id !== session) return;
+      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') fallback('Video connection failed');
+      if (pc.connectionState === 'disconnected') scheduleRetry(id, 'Connection lost. Reconnecting…');
+    };
+
+    // If no picture arrives quickly (firewall blocks UDP, old browser…), use sharp mode.
+    const failTimer = setTimeout(() => { if (!gotFrame && video.videoWidth === 0) fallback('Video did not start'); }, 8000);
+    function fallback(why) {
+      if (id !== session) return;
+      console.warn(why + ' — switching to sharp mode');
+      mode = 'sharp';
+      start();
+    }
+
+    (async () => {
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        const res = await fetch('/offer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'offer', sdp: pc.localDescription.sdp }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const answer = await res.json();
+        if (id !== session) return;
+        await pc.setRemoteDescription(answer);
+      } catch (e) {
+        console.error(e);
+        if (id === session) scheduleRetry(id, 'Waiting for the host to share…');
+      }
+    })();
+
+    // Stats: network + jitter buffer + decode, plus the host's encode time.
+    let prev = null;
+    const statTimer = setInterval(async () => {
+      if (id !== session) return;
+      try {
+        const report = await pc.getStats();
+        let inb = null, pair = null;
+        report.forEach((s) => {
+          if (s.type === 'inbound-rtp' && s.kind === 'video') inb = s;
+          if (s.type === 'candidate-pair' && s.nominated && s.state === 'succeeded') pair = s;
+        });
+        if (!inb) return;
+        if ((inb.framesDecoded || 0) > 0 || video.videoWidth > 0) markLive();
+        if (prev) {
+          const dt = (inb.timestamp - prev.timestamp) / 1000;
+          const emitted = (inb.jitterBufferEmittedCount || 0) - (prev.jitterBufferEmittedCount || 0);
+          const jb = emitted > 0 ? ((inb.jitterBufferDelay || 0) - (prev.jitterBufferDelay || 0)) / emitted * 1000 : 0;
+          const decoded = (inb.framesDecoded || 0) - (prev.framesDecoded || 0);
+          const dec = decoded > 0 ? ((inb.totalDecodeTime || 0) - (prev.totalDecodeTime || 0)) / decoded * 1000 : 0;
+          const rtt = pair && pair.currentRoundTripTime ? pair.currentRoundTripTime * 1000 : 0;
+          stats.fps = Math.round(decoded / dt);
+          stats.kbps = Math.round(((inb.bytesReceived || 0) - (prev.bytesReceived || 0)) * 8 / 1000 / dt);
+          if (decoded > 0) stats.latency = Math.round(hostEncodeMs + rtt / 2 + jb + dec + 8);
+        }
+        prev = inb;
+      } catch {}
+    }, 1000);
+
+    return () => {
+      clearTimeout(failTimer);
+      clearInterval(statTimer);
+      try { pc.close(); } catch {}
+      video.srcObject = null;
+    };
+  }
+
+  // ---------------------------------------------------------------- sharp (JPEG tiles)
+  function startSharp(id) {
+    canvas.classList.remove('hide');
+    video.classList.add('hide');
+    let queue = Promise.resolve();
+    let cursor = { x: 0, y: 0, visible: false };
+    let frames = 0, bytes = 0, lastStat = performance.now();
+
+    const decode = window.createImageBitmap
+      ? (b) => createImageBitmap(new Blob([b], { type: 'image/jpeg' }))
+      : (b) => new Promise((resolve, reject) => {
+          const url = URL.createObjectURL(new Blob([b], { type: 'image/jpeg' }));
+          const img = new Image();
+          img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+          img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+          img.src = url;
+        });
+
+    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+    ws.binaryType = 'arraybuffer';
+    ws.onmessage = (e) => {
+      const buf = e.data;
+      queue = queue.then(() => handle(buf)).catch((err) => console.error(err));
+    };
+    ws.onclose = () => scheduleRetry(id, 'Stream stopped. Waiting for the host to share again…');
+
+    async function handle(buf) {
+      if (id !== session) return;
+      const v = new DataView(buf);
+      if (v.getUint8(0) !== 1) return;
+      const seq = v.getUint32(1, true);
+      const w = v.getUint16(5, true), h = v.getUint16(7, true);
+      const flags = v.getUint8(9);
+      cursor = { x: v.getInt16(10, true), y: v.getInt16(12, true), visible: !!(flags & 2) };
+      stats.latency = v.getUint16(14, true);
+      const n = v.getUint16(16, true);
+      const patches = [];
+      let o = 18;
+      for (let i = 0; i < n; i++) {
+        const x = v.getUint16(o, true), y = v.getUint16(o + 2, true), len = v.getUint32(o + 4, true);
+        patches.push({ x, y, data: new Uint8Array(buf, o + 8, len) });
+        o += 8 + len;
+      }
+      const images = await Promise.all(patches.map((p) => decode(p.data)));
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+      for (let i = 0; i < images.length; i++) {
+        ctx.drawImage(images[i], patches[i].x, patches[i].y);
+        if (images[i].close) images[i].close();
+      }
+      if (ws.readyState === 1) ws.send(String(seq));
+      placeCursor();
+      showLive();
+      if (n > 0) frames++;
+      bytes += buf.byteLength;
+    }
+
+    function placeCursor() {
+      if (!cursor.visible || !canvas.width) { cursorEl.style.display = 'none'; return; }
+      const r = canvas.getBoundingClientRect();
+      const sx = r.width / canvas.width;
+      const px = r.left + cursor.x * sx, py = r.top + cursor.y * (r.height / canvas.height);
+      cursorEl.style.display = 'block';
+      const size = Math.max(12, Math.min(24, 20 * sx * 1.4));
+      cursorEl.style.width = cursorEl.style.height = size + 'px';
+      cursorEl.style.transform = `translate(${px}px, ${py}px)`;
+    }
+    const onResize = () => placeCursor();
+    window.addEventListener('resize', onResize);
+    stage.addEventListener('scroll', onResize, { passive: true });
+
+    const statTimer = setInterval(() => {
+      const now = performance.now(), dt = (now - lastStat) / 1000;
+      stats.fps = Math.round(frames / dt);
+      stats.kbps = Math.round(bytes * 8 / 1000 / dt);
+      frames = 0; bytes = 0; lastStat = now;
+    }, 1000);
+
+    return () => {
+      clearInterval(statTimer);
+      window.removeEventListener('resize', onResize);
+      stage.removeEventListener('scroll', onResize);
+      ws.onclose = null;
+      try { ws.close(); } catch {}
+      cursorEl.style.display = 'none';
+    };
+  }
+
+  // ---------------------------------------------------------------- shared UI
+  setInterval(async () => {
+    statsEl.textContent = `${mode === 'video' ? 'Video' : 'Sharp'} · ~${stats.latency} ms · ${stats.fps} fps · ` +
+      (stats.kbps >= 1000 ? (stats.kbps / 1000).toFixed(1) + ' Mbps' : stats.kbps + ' kbps');
+    try {
+      const info = await (await fetch('/info', { cache: 'no-store' })).json();
+      hostEncodeMs = info.encodeMs || 0;
+      if (mode === 'video' && stats.latency > 0 && !embed) {
+        fetch('/stats', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ latencyMs: stats.latency }) }).catch(() => {});
+      }
+    } catch {}
+  }, 1000);
+
+  modeBtn.onclick = () => {
+    mode = mode === 'video' ? 'sharp' : 'video';
+    store.set('ls-mode', mode);
+    showStatus('Switching…');
+    start();
+  };
+  tap.onclick = () => { tap.classList.add('hide'); video.play().catch(() => {}); };
+  $('statsBtn').onclick = () => live.classList.toggle('show-stats');
+  const fitBtn = $('fitBtn');
+  fitBtn.onclick = () => {
+    const actual = stage.classList.toggle('actual');
+    fitBtn.textContent = actual ? 'Fit to screen' : 'Actual size';
+  };
+  const fsBtn = $('fsBtn');
+  const fsEl = document.documentElement;
+  const canFs = !!(fsEl.requestFullscreen || fsEl.webkitRequestFullscreen);
+  function toggleFs() {
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    } else if (canFs) {
+      (fsEl.requestFullscreen || fsEl.webkitRequestFullscreen).call(fsEl);
+    } else if (video.webkitEnterFullscreen && mode === 'video') {
+      video.webkitEnterFullscreen();   // iPhone: native fullscreen for <video>
+    }
+  }
+  if (!canFs && !video.webkitEnterFullscreen) fsBtn.style.display = 'none';
+  fsBtn.onclick = toggleFs;
+  stage.addEventListener('dblclick', toggleFs);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'f' || e.key === 'F') toggleFs();
+    if (e.key === 's' || e.key === 'S') live.classList.toggle('show-stats');
+  });
+
+  let idleTimer;
+  function wake() {
+    bar.classList.remove('idle'); live.classList.remove('idle');
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => { bar.classList.add('idle'); live.classList.add('idle'); }, 2500);
+  }
+  ['mousemove', 'touchstart', 'keydown'].forEach((ev) => document.addEventListener(ev, wake, { passive: true }));
+  wake();
+
+  // Phones drop connections while asleep: reconnect when the page is visible again.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && !overlay.classList.contains('hidden')) start();
+  });
+
+  start();
+})();
+</script>
+</body>
+</html>

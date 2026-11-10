@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local Stream</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main>
+  <header>
+    <div class="brand">
+      <div class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M9.5 9.5a3.5 3.5 0 0 1 5 0M7.5 7.5a6.4 6.4 0 0 1 9 0"/></svg>
+      </div>
+      <h1>Local Stream</h1>
+    </div>
+    <span id="pill" class="pill off">Off</span>
+  </header>
+
+  <section class="card hero">
+    <button id="toggle" class="primary">Start sharing</button>
+    <p id="hint" class="muted">Anyone on the same Wi-Fi can open the link in a browser to watch this screen.</p>
+
+    <div id="liveBox" hidden>
+      <div class="url-row">
+        <a id="mainUrl" class="url" href="#"></a>
+        <button id="copyBtn" class="ghost small">Copy</button>
+      </div>
+      <div id="qr" class="qr"></div>
+      <div class="stats">
+        <div><span id="viewers">0</span><label>viewers</label></div>
+        <div><span id="latency">–</span><label>latency</label></div>
+        <div><span id="fps">–</span><label>fps</label></div>
+        <div><span id="bw">–</span><label>bandwidth</label></div>
+      </div>
+      <p id="resLine" class="muted small-text center"></p>
+      <details id="otherBox">
+        <summary>Other network addresses</summary>
+        <ul id="otherUrls"></ul>
+      </details>
+    </div>
+    <div id="error" class="error" hidden></div>
+  </section>
+
+  <section class="card">
+    <h2>Settings</h2>
+    <div class="field">
+      <label for="monitor">Screen</label>
+      <select id="monitor"></select>
+    </div>
+    <div class="grid2">
+      <div class="field">
+        <label for="fpsSel">Frame rate</label>
+        <select id="fpsSel">
+          <option value="5">5 fps</option>
+          <option value="10">10 fps</option>
+          <option value="15">15 fps</option>
+          <option value="24">24 fps</option>
+          <option value="30">30 fps</option>
+          <option value="60">60 fps</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="resSel">Max resolution</label>
+        <select id="resSel">
+          <option value="0">Native</option>
+          <option value="2560">2560 px wide</option>
+          <option value="1920">1920 px (1080p)</option>
+          <option value="1280">1280 px (720p)</option>
+          <option value="960">960 px</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label for="quality">Quality <span id="qualityVal" class="muted"></span></label>
+      <input id="quality" type="range" min="30" max="95" step="5">
+    </div>
+    <div class="field">
+      <label for="port">Port</label>
+      <input id="port" type="number" min="1024" max="65000">
+    </div>
+    <p class="muted small-text">Changes apply instantly. Viewers get smooth H.264 video over WebRTC (best for YouTube and motion) and can switch to “Sharp text” mode on their side. On weak Wi-Fi, lower the quality or resolution.</p>
+  </section>
+
+  <section class="card">
+    <label class="switch">
+      <input id="previewToggle" type="checkbox">
+      <span>Show preview</span>
+    </label>
+    <iframe id="preview" title="Stream preview" hidden></iframe>
+  </section>
+</main>
+<script src="main.js"></script>
+</body>
+</html>
